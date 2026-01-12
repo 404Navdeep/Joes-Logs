@@ -1,0 +1,21 @@
+{
+  "name": "hackatime-logs",
+  "version": "1.0.0",
+  "description": "",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "fetch": "^1.1.0",
+    "fs": "^0.0.1-security",
+    "node-fetch": "^2.7.0"
+  }
+}
