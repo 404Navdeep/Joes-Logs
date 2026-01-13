@@ -16,12 +16,15 @@ const SLACK_CHANNEL = process.env.SLACK_CHANNEL_ID;
 
 const SCAN_INTERVAL = 10 * 60 * 1000;
 
-let oldData = {};
-let currentData = {};
+let oldData = { red: {}, green: {} };
+let currentData = { red: {}, green: {} };
+
 let newlyAdded = { red: {}, green: {} };
 let removed = { red: {}, green: {} };
 
 let scanRunning = false;
+let scanCompletedOnce = false;
+
 
 if (fs.existsSync(pathFile)) {
   currentData = JSON.parse(fs.readFileSync(pathFile, "utf-8"));
@@ -42,11 +45,19 @@ function runScan() {
 
   proc.on("exit", (code) => {
     scanRunning = false;
-    console.log(`Scan script finished (exit ${code})`);
+    scanCompletedOnce = true;
+
+    if (fs.existsSync(pathFile)) {
+      currentData = JSON.parse(fs.readFileSync(pathFile, "utf-8"));
+      oldData = JSON.parse(JSON.stringify(currentData));
+    }
+
+    console.log(`Scan completed (exit ${code}). Baseline updated.`);
   });
 
-  proc.on("error", () => {
+  proc.on("error", (err) => {
     scanRunning = false;
+    console.error("Scan failed:", err.message);
   });
 }
 
@@ -55,22 +66,23 @@ setInterval(runScan, SCAN_INTERVAL);
 
 
 async function sendSlackUpdate({ update, group, user_id, username }) {
-  if (!SLACK_TOKEN || !SLACK_CHANNEL) {
-    console.log("Slack env vars missing, skipping send.");
-    return;
-  }
-
-  const actionText = update === "added" ? "added to" : "removed from";
+  if (!SLACK_TOKEN || !SLACK_CHANNEL) return;
 
   let text;
 
   if (group === "red") {
     text =
-`${username}(${user_id}) has been ${actionText} the BANNED :ban: list... dont do fraud kids^^`;
-  } else if (group === "green") {
+      update === "added"
+        ? `*${username}(${user_id}) has been BANNED... dont do fraud kids^^`
+        : `*${username}(${user_id}) has been Un-BANNED... one more chance^^`;
+  }
+
+  if (group === "green") {
     text =
-`${username}(${user_id}) has been ${actionText} the TRUSTED :fraud-squad: list... be trusted kids^^`;
-  } else {}
+      update === "added"
+        ? `${username}(${user_id}) has been TRUSTED :fraud-squad:... be trusted kids^^`
+        : `${username}(${user_id}) has been Un-TRUSTED :fraud-squad:... dont be stupid kids^^`;
+  }
 
   try {
     const res = await fetch("https://slack.com/api/chat.postMessage", {
@@ -86,21 +98,19 @@ async function sendSlackUpdate({ update, group, user_id, username }) {
     });
 
     const json = await res.json();
-    if (!json.ok) {
-      console.log("Slack API error:", json.error);
-    } else {
-      console.log(`Slack sent → ${group} | ${update} | ${user_id}`);
-    }
+    if (!json.ok) console.error("Slack API error:", json.error);
   } catch (err) {
-    console.log("Slack send failed:", err.message);
+    console.error("Slack send failed:", err.message);
   }
 }
 
-
 fs.watchFile(pathFile, { interval: 1000 }, async (curr, prev) => {
+  if (!scanCompletedOnce) return;
+  if (scanRunning) return;
   if (curr.mtimeMs === prev.mtimeMs) return;
 
   const newData = JSON.parse(fs.readFileSync(pathFile, "utf-8"));
+
   newlyAdded = { red: {}, green: {} };
   removed = { red: {}, green: {} };
 
@@ -136,8 +146,9 @@ fs.watchFile(pathFile, { interval: 1000 }, async (curr, prev) => {
   oldData = JSON.parse(JSON.stringify(newData));
   currentData = newData;
 
-  console.log("File updated. Health data refreshed.");
+  console.log("External update detected. Slack notified.");
 });
+
 
 app.get("/health", (req, res) => {
   res.json({
@@ -147,11 +158,13 @@ app.get("/health", (req, res) => {
       red: Object.keys(currentData.red || {}).length,
       green: Object.keys(currentData.green || {}).length,
     },
-    newlyAdded,
-    removed,
+    lastDiff: {
+      added: newlyAdded,
+      removed,
+    },
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`Health endpoint running: http://localhost:${PORT}/health`);
+  console.log(`Health endpoint running → http://localhost:${PORT}/health`);
 });

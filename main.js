@@ -3,7 +3,7 @@ const fs = require("fs");
 const BASE_URL = "https://hackatime.hackclub.com/api/v1/users";
 const MAX_ID = 25992;
 
-const SCAN_CONCURRENCY = 100;
+const SCAN_CONCURRENCY = 50;
 const STATS_CONCURRENCY = 75;
 
 // TRUST SCAN
